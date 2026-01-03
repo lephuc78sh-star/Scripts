@@ -1,0 +1,392 @@
+-- The Forge Hack - PHÚC ĐẸP TRAI Edition v1.0 (Custom Full Script)
+-- Auto Farm Ore/Mob, Auto Forge Instant, Kill Aura, Fly, Super Jump, Noclip
+-- Mobile/PC keyless, GUI đẹp vl. Place ID Check: 76558904092080
+-- Chạy loadstring(game:HttpGet("https://raw.githubusercontent.com/gumanba/Scripts/main/TheForgeHackPhuc"))()
+
+local PlaceId = game.PlaceId
+if PlaceId ~= 76558904092080 then
+    return game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "PHÚC ĐẸP TRAI";
+        Text = "Chỉ dùng cho The Forge! Sai game rồi thằng lồn.";
+        Duration = 5;
+    })
+end
+
+local player = game.Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local hrp = char:WaitForChild("HumanoidRootPart")
+local hum = char:WaitForChild("Humanoid")
+local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
+local TS = game:GetService("TweenService")
+local WS = game:GetService("Workspace")
+
+-- Toggles
+local guiVisible = true
+local autoFarmOre = false
+local autoFarmMob = false
+local autoForge = false
+local flyEnabled = false
+local superJump = false
+local noclipEnabled = false
+local flySpeed = 50
+local jumpPower = 50
+local superJumpPower = 150
+
+local touches = {}
+local bodyVelocity, bodyAngularVelocity
+local connections = {}
+
+-- Teleport positions (test & chỉnh theo map The Forge)
+local teleports = {
+    ["Spawn"] = CFrame.new(0, 10, 0),
+    ["Cave"] = CFrame.new(-150, 20, 100),
+    ["Forge"] = CFrame.new(50, 5, 50),
+    ["Shop"] = CFrame.new(200, 10, 0)
+}
+
+local function teleportTo(cframe)
+    if hrp then
+        hrp.CFrame = cframe
+    end
+end
+
+local function toggleFly()
+    flyEnabled = not flyEnabled
+    if flyEnabled then
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyAngularVelocity = Instance.new("BodyAngularVelocity")
+        bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+        bodyVelocity.Velocity = Vector3.new(0, 0.1, 0)
+        bodyAngularVelocity.MaxTorque = Vector3.new(4000, 4000, 4000)
+        bodyAngularVelocity.AngularVelocity = Vector3.new(0, 0, 0)
+        bodyVelocity.Parent = hrp
+        bodyAngularVelocity.Parent = hrp
+    else
+        if bodyVelocity then bodyVelocity:Destroy() end
+        if bodyAngularVelocity then bodyAngularVelocity:Destroy() end
+    end
+end
+
+local function updateJump()
+    hum.JumpPower = superJump and superJumpPower or jumpPower
+end
+
+-- Noclip
+local function toggleNoclip()
+    noclipEnabled = not noclipEnabled
+end
+
+RS.Stepped:Connect(function()
+    if noclipEnabled then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- Fly control (simplified, WASD + touch)
+RS.Heartbeat:Connect(function()
+    if flyEnabled and hrp and bodyVelocity then
+        local cam = WS.CurrentCamera
+        local vel = Vector3.new()
+        if UIS:IsKeyDown(Enum.KeyCode.W) then vel = vel + cam.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.S) then vel = vel - cam.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.A) then vel = vel - cam.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.D) then vel = vel + cam.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.Space) then vel = vel + Vector3.new(0,1,0) end
+        if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then vel = vel - Vector3.new(0,1,0) end
+        bodyVelocity.Velocity = vel * flySpeed
+    end
+end)
+
+-- Auto Farm Ore: Fire "Mine" prompts
+local function farmOreLoop()
+    if not autoFarmOre then return end
+    for _, obj in pairs(WS:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and (obj.ActionText:lower():find("mine") or obj.ObjectText:lower():find("ore") or obj.ObjectText:lower():find("rock")) then
+            local dist = (hrp.Position - obj.Parent.Position).Magnitude
+            if dist < 25 then
+                fireproximityprompt(obj)
+            end
+        end
+    end
+end
+
+-- Auto Farm Mob / Kill Aura
+local function farmMobLoop()
+    if not autoFarmMob then return end
+    for _, obj in pairs(WS:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and (obj.ActionText:lower():find("attack") or obj.ActionText:lower():find("kill") or obj.ObjectText:lower():find("zombie") or obj.ObjectText:lower():find("mob")) then
+            local dist = (hrp.Position - obj.Parent.Position).Magnitude
+            if dist < 40 then
+                fireproximityprompt(obj)
+            end
+        end
+    end
+end
+
+-- Auto Forge: Fire forge prompts (Melt, Hammer, Pour, Mold...)
+local function forgeLoop()
+    if not autoForge then return end
+    for _, obj in pairs(WS:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and (obj.ActionText:lower():find("melt") or obj.ActionText:lower():find("hammer") or obj.ActionText:lower():find("pour") or obj.ActionText:lower():find("mold") or obj.ActionText:lower():find("forge")) then
+            local dist = (hrp.Position - obj.Parent.Position).Magnitude
+            if dist < 20 then
+                fireproximityprompt(obj)
+            end
+        end
+    end
+end
+
+-- Main loops
+table.insert(connections, RS.Heartbeat:Connect(farmOreLoop))
+table.insert(connections, RS.Heartbeat:Connect(farmMobLoop))
+table.insert(connections, RS.Heartbeat:Connect(forgeLoop))
+
+-- Touch mobile TP (2 ngón TP raycast, 3 ngón noclip)
+UIS.TouchStarted:Connect(function(touch, processed)
+    if processed then return end
+    touches[touch] = true
+    local count = 0
+    for _ in pairs(touches) do count += 1 end
+    if count == 2 then
+        -- Avg pos 2 touches
+        local pos = {}
+        for t,_ in pairs(touches) do table.insert(pos, t.Position) end
+        local avgX, avgY = (pos[1].X + pos[2].X)/2, (pos[1].Y + pos[2].Y)/2
+        local ray = WS.CurrentCamera:ScreenPointToRay(avgX, avgY)
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = {char}
+        local result = WS:Raycast(ray.Origin, ray.Direction * 1000, params)
+        local target = result and result.Position or ray.Origin + ray.Direction * 500
+        hrp.CFrame = CFrame.new(target + Vector3.new(0,5,0))
+    elseif count == 3 then
+        toggleNoclip()
+    end
+end)
+
+UIS.TouchEnded:Connect(function(touch)
+    touches[touch] = nil
+end)
+
+-- ============= GUI SIÊU ĐẸP PHÚC ĐẸP TRAI =============
+local sg = Instance.new("ScreenGui")
+sg.Name = "PhucDepTraiTheForge"
+sg.ResetOnSpawn = false
+sg.Parent = player.PlayerGui
+
+-- Nút tròn toggle (⚒️ cam, góc phải dưới)
+local circle = Instance.new("TextButton")
+circle.Name = "ToggleBtn"
+circle.Size = UDim2.new(0,80,0,80)
+circle.Position = UDim2.new(1,-100,1,-100)
+circle.BackgroundColor3 = Color3.fromRGB(255,150,0)
+circle.Text = "⚒️"
+circle.TextColor3 = Color3.new(1,1,1)
+circle.Font = Enum.Font.GothamBold
+circle.TextSize = 40
+circle.Parent = sg
+
+local circleCorner = Instance.new("UICorner")
+circleCorner.CornerRadius = UDim.new(1,0)
+circleCorner.Parent = circle
+
+local circleGrad = Instance.new("UIGradient")
+circleGrad.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255,180,50)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255,100,0))
+}
+circleGrad.Parent = circle
+
+-- Hover effect
+local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quint)
+circle.MouseEnter:Connect(function()
+    TS:Create(circle, tweenInfo, {Size = UDim2.new(0,90,0,90)}):Play()
+end)
+circle.MouseLeave:Connect(function()
+    TS:Create(circle, tweenInfo, {Size = UDim2.new(0,80,0,80)}):Play()
+end)
+
+-- Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0,360,0,550)
+mainFrame.Position = UDim2.new(0.5,-180,1,0)  -- Start hidden below
+mainFrame.BackgroundColor3 = Color3.fromRGB(15,15,25)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = sg
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0,20)
+mainCorner.Parent = mainFrame
+
+local mainGrad = Instance.new("UIGradient")
+mainGrad.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(30,30,50)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(10,10,20))
+}
+mainGrad.Parent = mainFrame
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,90)
+title.BackgroundTransparency = 1
+title.Text = "⚒️ PHÚC ĐẸP TRAI ⚒️"
+title.TextColor3 = Color3.fromRGB(255,80,120)
+title.Font = Enum.Font.GothamBlack
+title.TextSize = 38
+title.TextStrokeTransparency = 0.6
+title.TextStrokeColor3 = Color3.fromRGB(255,50,100)
+title.Parent = mainFrame
+
+-- Info
+local info = Instance.new("TextLabel")
+info.Size = UDim2.new(1,-30,0,80)
+info.Position = UDim2.new(0,15,0,90)
+info.BackgroundTransparency = 1
+info.Text = "➤ 2 ngón chạm: TP\n➤ 3 ngón: Noclip\n➤ Auto Farm Ore/Mob/Forge\n➤ Fly: WASD + Space/Shift"
+info.TextColor3 = Color3.fromRGB(180,200,255)
+info.Font = Enum.Font.Gotham
+info.TextSize = 18
+info.TextXAlignment = Enum.TextXAlignment.Left
+info.Parent = mainFrame
+
+-- Buttons (Toggle style)
+local function createToggleBtn(text, posY, callback, color)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1,-40,0,65)
+    btn.Position = UDim2.new(0,20,0,posY)
+    btn.BackgroundColor3 = color or Color3.fromRGB(50,150,255)
+    btn.Text = text .. ": OFF"
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 22
+    btn.Parent = mainFrame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0,15)
+    btnCorner.Parent = btn
+
+    local btnGrad = Instance.new("UIGradient")
+    btnGrad.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, color or Color3.fromRGB(70,170,255)),
+        ColorSequenceKeypoint.new(1, color or Color3.fromRGB(30,100,200))
+    }
+    btnGrad.Parent = btn
+
+    local state = false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = text .. ": " .. (state and "ON" or "OFF")
+        btn.BackgroundColor3 = state and Color3.fromRGB(100,200,100) or (color or Color3.fromRGB(50,150,255))
+        callback(state)
+    end)
+    return btn
+end
+
+-- Auto Farm Ore
+createToggleBtn("AUTO FARM ORE", 180, function(state) autoFarmOre = state end, Color3.fromRGB(100,200,100))
+
+-- Auto Farm Mob / Kill Aura
+createToggleBtn("KILL AURA / AUTO MOB", 255, function(state) autoFarmMob = state end, Color3.fromRGB(255,100,100))
+
+-- Auto Forge
+createToggleBtn("AUTO FORGE INSTANT", 330, function(state) autoForge = state end, Color3.fromRGB(255,200,100))
+
+-- Fly
+createToggleBtn("FLY", 405, toggleFly)
+
+-- Super Jump
+createToggleBtn("SUPER JUMP", 480, function(state)
+    superJump = state
+    updateJump()
+end, Color3.fromRGB(100,255,200))
+
+-- Teleport buttons (simple dropdown style, or buttons)
+local tpFrame = Instance.new("Frame")
+tpFrame.Size = UDim2.new(1,-40,0,100)
+tpFrame.Position = UDim2.new(0,20,0,555)
+tpFrame.BackgroundTransparency = 1
+tpFrame.Parent = mainFrame
+
+-- TP buttons example
+local function createTPBtn(name, pos)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.48,0,0,35)
+    btn.Position = pos
+    btn.BackgroundColor3 = Color3.fromRGB(150,100,255)
+    btn.Text = "TP " .. name
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 16
+    btn.Parent = tpFrame
+
+    local c = Instance.new("UICorner", btn)
+    c.CornerRadius = UDim.new(0,10)
+
+    btn.MouseButton1Click:Connect(function()
+        local cf = teleports[name]
+        if cf then teleportTo(cf) end
+    end)
+end
+
+createTPBtn("Spawn", UDim2.new(0,0,0,0))
+createTPBtn("Cave", UDim2.new(0.5,0,0,0))
+createTPBtn("Forge", UDim2.new(0,0,0,45))
+createTPBtn("Shop", UDim2.new(0.5,0,0,45))
+
+mainFrame.Size = UDim2.new(0,360,0,660)  -- Adjust for TP
+
+-- Toggle func
+local function toggleGUI()
+    guiVisible = not guiVisible
+    local targetPos = guiVisible and UDim2.new(0.5,-180,0.05,0) or UDim2.new(0.5,-180,1.2,0)
+    TS:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back), {Position = targetPos}):Play()
+end
+
+circle.MouseButton1Click:Connect(toggleGUI)
+
+-- Drag mainFrame
+local dragging, dragStart, startPos
+mainFrame.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = inp.Position
+        startPos = mainFrame.Position
+        inp.Changed:Connect(function()
+            if inp.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+mainFrame.InputChanged:Connect(function(inp)
+    if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        local delta = inp.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Character respawn
+player.CharacterAdded:Connect(function(newChar)
+    char = newChar
+    hrp = char:WaitForChild("HumanoidRootPart")
+    hum = char:WaitForChild("Humanoid")
+    updateJump()
+    toggleFly()  -- Reset fly
+end)
+
+-- Init
+updateJump()
+toggleGUI()  -- Show initial
+
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "PHÚC ĐẸP TRAI";
+    Text = "The Forge Hack loaded! GUI nút ⚒️ toggle. Farm ngon vl!";
+    Duration = 5;
+})
+
+print("PHÚC ĐẸP TRAI The Forge Hack chạy mượt! Auto Ore/Mob/Forge/Fly/Jump đầy đủ.")
